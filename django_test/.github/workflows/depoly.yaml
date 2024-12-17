@@ -1,0 +1,118 @@
+name: Update Django Application
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 檢出代碼
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. 安裝 SSH 私鑰
+      - name: Install SSH key
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      # 3. 備份並更新應用
+      - name: Update Application
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+            set -e
+            source ~/.bashrc
+            conda activate myenv
+            
+            cd ~/django_project
+            
+            # 創建備份（用於可能的回滾）
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            cp -r . ../django_project_backup_$TIMESTAMP
+            
+            # 拉取最新代碼
+            git pull origin main
+            
+            # 更新依賴
+            pip install -r requirements.txt
+            
+            # 應用數據庫遷移
+            python manage.py migrate
+            
+            # 收集靜態文件
+            python manage.py collectstatic --noinput
+            
+            # 重啟服務
+            sudo systemctl restart gunicorn
+            sudo systemctl restart nginx
+          EOF
+
+      # 4. 運行測試
+      - name: Run Tests
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+            set -e
+            cd ~/django_project
+            source ~/.bashrc
+            conda activate myenv
+            pytest --maxfail=1 --disable-warnings -q
+          EOF
+
+      # 5. 驗證部署
+      - name: Verify Deployment
+        run: |
+          # 等待服務啟動
+          sleep 5
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_PUBLIC_IP }})
+            if [ "$RESPONSE" -eq 200 ]; then
+              echo "Deployment verified successfully!"
+              exit 0
+            fi
+            echo "Attempt $((RETRY_COUNT + 1)) failed with response code: $RESPONSE"
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              sleep 10
+            fi
+          done
+          echo "Deployment verification failed after $MAX_RETRIES attempts"
+          exit 1
+
+      # 6. 回滾機制
+      - name: Rollback if Failed
+        if: failure()
+        run: |
+          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+            set -e
+            cd ~
+            LATEST_BACKUP=$(ls -td django_project_backup_* | head -n 1)
+            
+            if [ -d "$LATEST_BACKUP" ]; then
+              echo "Rolling back to $LATEST_BACKUP"
+              rm -rf django_project
+              mv $LATEST_BACKUP django_project
+              
+              cd django_project
+              source ~/.bashrc
+              conda activate myenv
+              
+              # 重新應用數據庫遷移
+              python manage.py migrate
+              
+              # 重啟服務
+              sudo systemctl restart gunicorn
+              sudo systemctl restart nginx
+              
+              echo "Rollback completed"
+            else
+              echo "No backup found for rollback!"
+              exit 1
+            fi
+          EOF
