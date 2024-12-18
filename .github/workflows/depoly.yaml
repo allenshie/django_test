@@ -1,4 +1,4 @@
-ubuntuname: Update Django Application
+name: Update Django Application
 
 on:
   push:
