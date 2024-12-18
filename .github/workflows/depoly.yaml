@@ -25,7 +25,12 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
-            source ~/.bashrc
+            
+            # 添加 Conda 路徑到 PATH
+            export PATH="/home/ubuntu/miniconda3/condabin:$PATH"
+            
+            # 激活 Conda 環境
+            source /home/ubuntu/miniconda3/bin/activate
             conda activate django_env
             
             cd ~/django_test
