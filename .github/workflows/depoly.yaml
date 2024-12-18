@@ -82,7 +82,7 @@ jobs:
           RETRY_COUNT=0
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_PUBLIC_IP }})
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.EC2_PUBLIC_IP }}/health/)
             if [ "$RESPONSE" -eq 200 ]; then
               echo "Deployment verified successfully!"
               exit 0
@@ -108,7 +108,7 @@ jobs:
             
             # 激活 Conda 環境
             source /home/ubuntu/miniconda3/bin/activate
-            
+
             cd ~
             LATEST_BACKUP=$(ls -td django_test_backup_* | head -n 1)
             
