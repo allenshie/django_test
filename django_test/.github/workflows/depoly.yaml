@@ -1,4 +1,4 @@
-name: Update Django Application
+ubuntuname: Update Django Application
 
 on:
   push:
@@ -23,16 +23,16 @@ jobs:
       # 3. 備份並更新應用
       - name: Update Application
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
             source ~/.bashrc
-            conda activate myenv
+            conda activate django_env
             
-            cd ~/django_project
+            cd ~/django_test
             
             # 創建備份（用於可能的回滾）
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            cp -r . ../django_project_backup_$TIMESTAMP
+            cp -r . ../django_test_backup_$TIMESTAMP
             
             # 拉取最新代碼
             git pull origin main
@@ -54,11 +54,11 @@ jobs:
       # 4. 運行測試
       - name: Run Tests
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
-            cd ~/django_project
+            cd ~/django_test
             source ~/.bashrc
-            conda activate myenv
+            conda activate django_env
             pytest --maxfail=1 --disable-warnings -q
           EOF
 
@@ -89,19 +89,19 @@ jobs:
       - name: Rollback if Failed
         if: failure()
         run: |
-          ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_PUBLIC_IP }} << 'EOF'
             set -e
             cd ~
-            LATEST_BACKUP=$(ls -td django_project_backup_* | head -n 1)
+            LATEST_BACKUP=$(ls -td django_test_backup_* | head -n 1)
             
             if [ -d "$LATEST_BACKUP" ]; then
               echo "Rolling back to $LATEST_BACKUP"
-              rm -rf django_project
-              mv $LATEST_BACKUP django_project
+              rm -rf django_test
+              mv $LATEST_BACKUP django_test
               
-              cd django_project
+              cd django_test
               source ~/.bashrc
-              conda activate myenv
+              conda activate django_env
               
               # 重新應用數據庫遷移
               python manage.py migrate
